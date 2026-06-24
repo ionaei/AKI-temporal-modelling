@@ -9,7 +9,7 @@ The model predicts KDIGO-defined AKI onset within a 24-hour horizon,
 using 6-hourly clinical windows constructed from routinely collected
 EHR data (labs, medications, procedures, diagnoses, demographics,
 blood gases). The best-performing architecture (causal Transformer)
-achieves a median early-warning lead time of 51.8 hours before
+achieves a median early-warning lead time of 58.5 hours before
 KDIGO-defined onset, with independent replication on PIC and a
 twelve-month silent deployment evaluation.
 
