@@ -1,246 +1,259 @@
 """
 src/fake_data.py
 
-Generate synthetic PICU patient data with the same feature-engineered
-columns as the GOSH AKI prediction pipeline.
+Generate synthetic PICU patient data with exactly the same feature columns
+as the real GOSH AKI prediction pipeline (633 features from feature_cols.csv).
 
-Each patient has:
-- A sequence of 6-hour windows
-- Lab values, medication flags, procedure flags, demographics
-- A realistic trajectory (AKI, non-AKI, or borderline/amber)
-
-This data is entirely synthetic and does not contain any real patient information.
+All data is entirely synthetic. No real patient information is used.
 """
 
 import numpy as np
 import pandas as pd
-from pathlib import Path
 
-
-# ── Seed for reproducibility ──────────────────────────────
 RNG = np.random.default_rng(42)
 
-
-# ── Feature column names (must match your trained model) ─────────────
-# These are loaded from feature_cols.csv at runtime.
-# The generator below produces values for all of these.
-
-LAB_STATS = ['mean', 'min', 'max', 'last', 'trend', 'n']
-
+# ── Exact lab bases from feature_cols.csv ─────────────────
 CANONICAL_LABS = [
     'creatinine', 'urea', 'potassium', 'sodium', 'bicarbonate',
-    'ph', 'lactate', 'albumin', 'glucose', 'haemoglobin',
-    'wbc', 'platelets', 'bilirubin', 'chloride',
-    'po2', 'pco2', 'spo2', 'fio2', 'tao2',
-    'hct', 'mchc', 'mcv', 'rdw',
-    'anion_gap', 'ast', 'alt',
+    'haemoglobin', 'platelets', 'alt', 'ast', 'ph', 'lactate',
+    'egfr', 'albumin', 'crp', 'wbc', 'neutrophils', 'phosphate',
+    'calcium', 'magnesium', 'glucose', 'bilirubin', 'inr',
+    'pco2', 'po2', 'troponin', 'chloride', 'base_excess',
+    'osmolality', 'lymphocytes', 'mcv', 'rbc', 'hct', 'fio2',
+    'spo2', 'temperature', 'anion_gap', 'mchc', 'mch',
+    'p50', 'tao2', 'mpv',
 ]
 
-NEPHROTOXIN_COLS = [
-    'nephrotoxin_vancomycin',
-    'nephrotoxin_gentamicin',
-    'nephrotoxin_tacrolimus',
-    'nephrotoxin_ciclosporin',
-    'nephrotoxin_contrast',
-    'nephrotoxin_nsaid',
-    'nephrotoxin_acyclovir',
+# Normal ranges: (low, high, unit)
+LAB_NORMALS = {
+    'creatinine':  (25,   70,    'µmol/L'),
+    'urea':        (2.5,  7.0,   'mmol/L'),
+    'potassium':   (3.5,  5.0,   'mmol/L'),
+    'sodium':      (135,  145,   'mmol/L'),
+    'bicarbonate': (22,   29,    'mmol/L'),
+    'haemoglobin': (100,  145,   'g/L'),
+    'platelets':   (150,  400,   'x10⁹/L'),
+    'alt':         (7,    45,    'U/L'),
+    'ast':         (10,   40,    'U/L'),
+    'ph':          (7.35, 7.45,  ''),
+    'lactate':     (0.5,  2.0,   'mmol/L'),
+    'egfr':        (60,   120,   'mL/min/1.73m²'),
+    'albumin':     (35,   50,    'g/L'),
+    'crp':         (0,    10,    'mg/L'),
+    'wbc':         (4.0,  12.0,  'x10⁹/L'),
+    'neutrophils': (1.8,  7.5,   'x10⁹/L'),
+    'phosphate':   (0.8,  1.5,   'mmol/L'),
+    'calcium':     (2.1,  2.6,   'mmol/L'),
+    'magnesium':   (0.7,  1.1,   'mmol/L'),
+    'glucose':     (3.5,  7.0,   'mmol/L'),
+    'bilirubin':   (3,    21,    'µmol/L'),
+    'inr':         (0.8,  1.2,   ''),
+    'pco2':        (4.5,  6.0,   'kPa'),
+    'po2':         (10,   13,    'kPa'),
+    'troponin':    (0,    14,    'ng/L'),
+    'chloride':    (98,   107,   'mmol/L'),
+    'base_excess': (-2,   2,     'mmol/L'),
+    'osmolality':  (275,  295,   'mOsm/kg'),
+    'lymphocytes': (1.0,  4.0,   'x10⁹/L'),
+    'mcv':         (70,   90,    'fL'),
+    'rbc':         (3.8,  5.2,   'x10¹²/L'),
+    'hct':         (0.33, 0.43,  ''),
+    'fio2':        (0.21, 0.40,  ''),
+    'spo2':        (95,   100,   '%'),
+    'temperature': (36.5, 37.5,  '°C'),
+    'anion_gap':   (8,    16,    'mmol/L'),
+    'mchc':        (310,  360,   'g/L'),
+    'mch':         (27,   33,    'pg'),
+    'p50':         (25,   30,    'mmHg'),
+    'tao2':        (8,    12,    'mL/dL'),
+    'mpv':         (7.5,  12.5,  'fL'),
+}
+
+# Exact nephrotoxin binary cols
+NEPHROTOXIN_BINARY = [
+    'nephrotoxin_vancomycin', 'nephrotoxin_gentamicin',
+    'nephrotoxin_tobramycin', 'nephrotoxin_amikacin',
+    'nephrotoxin_colistin', 'nephrotoxin_amphotericin',
+    'nephrotoxin_ciclosporin', 'nephrotoxin_tacrolimus',
+    'nephrotoxin_ibuprofen', 'nephrotoxin_indomethacin',
+    'nephrotoxin_contrast', 'nephrotoxin_aciclovir',
+    'nephrotoxin_methotrexate', 'nephrotoxin_cisplatin',
+    'nephrotoxin_carboplatin', 'nephrotoxin_ifosfamide',
+    'nephrotoxin_sirolimus', 'nephrotoxin_any',
 ]
 
 DRUG_CLASS_COLS = [
-    'drug_class_diuretic',
-    'drug_class_vasopressor',
-    'drug_class_antibiotic',
-    'drug_class_antifungal',
-    'drug_class_immunosuppressant',
-    'drug_class_analgesic',
-    'drug_class_sedative',
+    'drug_class_diuretic', 'drug_class_ace_inhibitor',
+    'drug_class_arb', 'drug_class_vasopressor',
+    'drug_class_antibiotic', 'drug_class_antifungal',
+    'drug_class_immunosuppressant', 'drug_class_antiviral',
+    'drug_class_ppi_h2', 'drug_class_anticoagulant',
+    'drug_class_sedation_analgesia',
 ]
 
 PROC_COLS = [
-    'proc_cardiac_surgery',
-    'proc_bypass',
-    'proc_dialysis_rrt',
-    'proc_mechanical_ventilation',
-    'proc_central_line',
-    'proc_arterial_line',
-    'proc_ecmo',
-    'proc_orthopaedic',
+    'proc_cardiac_surgery', 'proc_renal_procedure',
+    'proc_transplant', 'proc_bypass_circuit',
+    'proc_dialysis_rrt', 'proc_imaging_contrast',
+    'proc_mechanical_vent', 'proc_central_line',
+    'proc_abdominal_surgery', 'proc_neurosurgery',
+    'proc_orthopaedic', 'proc_bronchoscopy_scope',
 ]
 
 DIAG_COLS = [
-    'diag_A', 'diag_C', 'diag_D', 'diag_E',
-    'diag_I', 'diag_J', 'diag_K', 'diag_N',
-    'diag_Q', 'diag_R', 'diag_Z',
+    'diag_A','diag_B','diag_C','diag_D','diag_E','diag_F',
+    'diag_G','diag_H','diag_I','diag_J','diag_K','diag_L',
+    'diag_M','diag_N','diag_O','diag_P','diag_Q','diag_R',
+    'diag_S','diag_T','diag_U','diag_W','diag_X','diag_Y','diag_Z',
 ]
 
-AGE_BAND_COLS = [
-    'age_neonate', 'age_infant', 'age_toddler',
-    'age_child', 'age_adolescent',
+# Missing flag columns (one per lab × {mean,min,max,last,trend})
+MISSING_FLAG_COLS = [
+    f'{lab}_{stat}_missing_flag'
+    for lab in CANONICAL_LABS
+    for stat in ['mean','min','max','last','trend']
 ]
-
-SEX_COLS   = ['sex_male', 'sex_female']
-ETHN_COLS  = [
-    'ethnicity_white', 'ethnicity_black', 'ethnicity_asian',
-    'ethnicity_mixed', 'ethnicity_other', 'ethnicity_not_available',
-]
-
-
-# ── Normal ranges (paediatric, approximate) ──────────────
-LAB_NORMALS = {
-    'creatinine': (30,  70,   'µmol/L'),   # age-dependent, using child range
-    'urea':       (2.5, 7.0,  'mmol/L'),
-    'potassium':  (3.5, 5.0,  'mmol/L'),
-    'sodium':     (135, 145,  'mmol/L'),
-    'bicarbonate':(22,  29,   'mmol/L'),
-    'ph':         (7.35,7.45, ''),
-    'lactate':    (0.5, 2.0,  'mmol/L'),
-    'albumin':    (35,  50,   'g/L'),
-    'glucose':    (3.5, 7.0,  'mmol/L'),
-    'haemoglobin':(100, 145,  'g/L'),
-    'wbc':        (4.0, 12.0, 'x10⁹/L'),
-    'platelets':  (150, 400,  'x10⁹/L'),
-    'bilirubin':  (3,   21,   'µmol/L'),
-    'chloride':   (98,  107,  'mmol/L'),
-    'po2':        (10,  13,   'kPa'),
-    'pco2':       (4.5, 6.0,  'kPa'),
-    'spo2':       (95,  100,  '%'),
-    'fio2':       (0.21,0.40, ''),
-    'tao2':       (8,   12,   'mL/dL'),
-    'hct':        (0.33,0.43, ''),
-    'mchc':       (310, 360,  'g/L'),
-    'mcv':        (70,  90,   'fL'),
-    'rdw':        (11,  15,   '%'),
-    'anion_gap':  (8,   16,   'mmol/L'),
-    'ast':        (10,  40,   'U/L'),
-    'alt':        (7,   45,   'U/L'),
-}
-
-# AKI trajectory: creatinine multiplier per step
-AKI_CREATININE_RISE = {
-    'gradual':  1.04,   # slow rise — Stage 1
-    'moderate': 1.07,   # faster rise — Stage 2
-    'severe':   1.12,   # rapid rise — Stage 3
-    'stable':   1.00,   # no rise
-    'dip_rise': None,   # dips then rises (tricky case)
-}
 
 
 def _lab_row(lab: str, value: float,
-              noise_scale: float = 0.05) -> dict:
-    """Generate one row of lab stats for a single lab in one window."""
-    noise  = RNG.normal(0, abs(value) * noise_scale)
-    trend  = RNG.normal(0, abs(value) * 0.03)
-    n_obs  = int(RNG.choice([0, 0, 1, 1, 2, 3], p=[0.25,0.15,0.25,0.15,0.15,0.05]))
-    row    = {}
-    for stat in LAB_STATS:
-        if stat == 'mean':
-            row[f'{lab}_mean']  = round(value + noise, 3)
-        elif stat == 'min':
-            row[f'{lab}_min']   = round(value + noise - abs(noise)*0.5, 3)
-        elif stat == 'max':
-            row[f'{lab}_max']   = round(value + noise + abs(noise)*0.5, 3)
-        elif stat == 'last':
-            row[f'{lab}_last']  = round(value + noise*0.5, 3)
-        elif stat == 'trend':
-            row[f'{lab}_trend'] = round(trend, 4)
-        elif stat == 'n':
-            row[f'{lab}_n']     = n_obs
+             aki_pre: bool = False) -> dict:
+    """
+    Generate all feature columns for one lab in one 6h window.
+    Columns: mean, min, max, last, trend, n, missing, alert,
+             plus missing_flag columns.
+    """
+    # Measurement probability — labs not always taken every window
+    p_measured = 0.55 if lab in ['creatinine','sodium','potassium'] else 0.30
+    measured   = RNG.random() < p_measured
+
+    row = {}
+    if measured:
+        noise = RNG.normal(0, abs(value) * 0.04)
+        v     = value + noise
+        lo, hi, _ = LAB_NORMALS[lab]
+        alert = 1 if (v < lo or v > hi) else 0
+        n_obs = int(RNG.choice([1, 2, 3], p=[0.6, 0.3, 0.1]))
+        trend = RNG.normal(0, abs(value) * 0.02)
+        row[f'{lab}_mean']    = round(v, 3)
+        row[f'{lab}_min']     = round(v - abs(noise)*0.3, 3)
+        row[f'{lab}_max']     = round(v + abs(noise)*0.3, 3)
+        row[f'{lab}_last']    = round(v + RNG.normal(0, abs(value)*0.02), 3)
+        row[f'{lab}_trend']   = round(trend, 4)
+        row[f'{lab}_n']       = n_obs
+        row[f'{lab}_missing'] = 0
+        row[f'{lab}_alert']   = alert
+        # Missing flags = 0 (value present)
+        for stat in ['mean','min','max','last','trend']:
+            row[f'{lab}_{stat}_missing_flag'] = 0
+    else:
+        # Not measured this window
+        row[f'{lab}_mean']    = 0.0
+        row[f'{lab}_min']     = 0.0
+        row[f'{lab}_max']     = 0.0
+        row[f'{lab}_last']    = 0.0
+        row[f'{lab}_trend']   = 0.0
+        row[f'{lab}_n']       = 0
+        row[f'{lab}_missing'] = 1
+        row[f'{lab}_alert']   = 0
+        for stat in ['mean','min','max','last','trend']:
+            row[f'{lab}_{stat}_missing_flag'] = 1
+
     return row
 
 
-def _static_features(patient: dict) -> dict:
-    """One-hot encode static features."""
+def _static_row(patient: dict) -> dict:
+    """One-hot encode all static features."""
     row = {}
-    # Age band
-    for col in AGE_BAND_COLS:
-        row[col] = 1 if col == f'age_{patient["age_band"]}' else 0
-    # Sex
-    row['sex_male']   = 1 if patient['sex'] == 'male'   else 0
-    row['sex_female'] = 1 if patient['sex'] == 'female' else 0
-    # Ethnicity
-    for col in ETHN_COLS:
-        key = col.replace('ethnicity_', '')
-        row[col] = 1 if key == patient['ethnicity'] else 0
+
     # Diagnoses
     for col in DIAG_COLS:
         row[col] = 1 if col in patient.get('diagnoses', []) else 0
-    # Procedures
+
+    # Age
+    row['age_years']     = patient['age_years']
+    row['age_neonate']   = 1 if patient['age_band'] == 'neonate'    else 0
+    row['age_infant']    = 1 if patient['age_band'] == 'infant'     else 0
+    row['age_toddler']   = 1 if patient['age_band'] == 'toddler'    else 0
+    row['age_child']     = 1 if patient['age_band'] == 'child'      else 0
+    row['age_adolescent']= 1 if patient['age_band'] == 'adolescent' else 0
+
+    # Sex (only sex_male in feature_cols — no sex_female)
+    row['sex_male'] = 1 if patient['sex'] == 'male' else 0
+
+    # Ethnicity
+    for col in [
+        'ethnicity_white','ethnicity_black','ethnicity_asian',
+        'ethnicity_mixed','ethnicity_other','ethnicity_not_available',
+    ]:
+        key = col.replace('ethnicity_', '')
+        row[col] = 1 if key == patient['ethnicity'] else 0
+
+    # Procedures (static — same every step)
     for col in PROC_COLS:
         row[col] = 1 if col in patient.get('procedures', []) else 0
+
     return row
 
 
 def generate_patient(
     patient_id:   str,
     n_steps:      int,
-    trajectory:   str = 'stable',
-    age_years:    float = None,
-    sex:          str   = None,
-    cardiac:      bool  = False,
-    nephrotoxins: list  = None,
-) -> pd.DataFrame:
+    trajectory:   str,
+    age_years:    float,
+    sex:          str,
+    cardiac:      bool,
+    nephrotoxins: list,
+) -> tuple[pd.DataFrame, dict]:
     """
-    Generate a synthetic patient admission as a sequence of 6h windows.
-
-    trajectory : 'aki_gradual' | 'aki_moderate' | 'aki_severe'
-                 | 'stable' | 'borderline' | 'aki_late'
-
-    Returns DataFrame with one row per 6h step.
+    Generate a synthetic patient as a sequence of 6h windows
+    with exactly 633 feature columns matching feature_cols.csv.
     """
-    if age_years is None:
-        age_years = float(RNG.uniform(0.5, 17))
-    if sex is None:
-        sex = RNG.choice(['male', 'female'])
-    if nephrotoxins is None:
-        nephrotoxins = []
-
     # Age band
-    if age_years < 0.083:      age_band = 'neonate'
-    elif age_years < 1:        age_band = 'infant'
-    elif age_years < 3:        age_band = 'toddler'
-    elif age_years < 12:       age_band = 'child'
-    else:                      age_band = 'adolescent'
+    if age_years < 0.083:    age_band = 'neonate'
+    elif age_years < 1:      age_band = 'infant'
+    elif age_years < 3:      age_band = 'toddler'
+    elif age_years < 12:     age_band = 'child'
+    else:                    age_band = 'adolescent'
 
-    # Creatinine baseline (age-adjusted)
-    if age_years < 1:     base_cr = RNG.uniform(20, 40)
-    elif age_years < 5:   base_cr = RNG.uniform(25, 45)
-    elif age_years < 12:  base_cr = RNG.uniform(35, 60)
-    else:                 base_cr = RNG.uniform(50, 80)
+    # Baseline creatinine (age-adjusted)
+    if age_years < 1:    base_cr = RNG.uniform(18, 38)
+    elif age_years < 5:  base_cr = RNG.uniform(25, 42)
+    elif age_years < 12: base_cr = RNG.uniform(32, 58)
+    else:                base_cr = RNG.uniform(48, 78)
 
     # Diagnoses
     diagnoses = []
     if cardiac:
-        diagnoses.append('diag_I')   # circulatory
-        diagnoses.append('diag_Q')   # congenital
-    if RNG.random() > 0.6:
+        diagnoses += ['diag_I', 'diag_Q']
+    if RNG.random() > 0.5:
         diagnoses.append(RNG.choice(['diag_J','diag_E','diag_D','diag_Z']))
 
     # Procedures
-    procedures = []
+    procedures = list(PROC_COLS[:0])
     if cardiac:
-        procedures.extend(['proc_cardiac_surgery', 'proc_bypass'])
-    if RNG.random() > 0.5:
-        procedures.append('proc_mechanical_ventilation')
-    if RNG.random() > 0.7:
+        procedures += ['proc_cardiac_surgery', 'proc_bypass_circuit']
+    if RNG.random() > 0.45:
+        procedures.append('proc_mechanical_vent')
+    if RNG.random() > 0.55:
         procedures.append('proc_central_line')
 
     patient_meta = {
-        'patient_id':  patient_id,
-        'age_years':   age_years,
-        'age_band':    age_band,
-        'sex':         sex,
-        'ethnicity':   RNG.choice(
+        'patient_id': patient_id,
+        'age_years':  age_years,
+        'age_band':   age_band,
+        'sex':        sex,
+        'ethnicity':  RNG.choice(
             ['white','black','asian','mixed','other','not_available'],
             p=[0.45,0.20,0.15,0.08,0.07,0.05]
         ),
-        'diagnoses':   diagnoses,
-        'procedures':  procedures,
-        'trajectory':  trajectory,
-        'has_aki':     'aki' in trajectory,
-        'cardiac':     cardiac,
+        'diagnoses':  diagnoses,
+        'procedures': procedures,
+        'trajectory': trajectory,
+        'has_aki':    'aki' in trajectory,
+        'cardiac':    cardiac,
     }
 
-    # ── Determine AKI onset step ──────────────────────────
+    # AKI onset step
     if trajectory == 'aki_gradual':
         onset_step = int(n_steps * RNG.uniform(0.55, 0.75))
         cr_mult    = 1.04
@@ -252,160 +265,166 @@ def generate_patient(
         cr_mult    = 1.12
     elif trajectory == 'aki_late':
         onset_step = int(n_steps * RNG.uniform(0.75, 0.90))
-        cr_mult    = 1.06
+        cr_mult    = 1.05
     elif trajectory == 'borderline':
-        onset_step = n_steps + 1   # no onset — high risk but no AKI
-        cr_mult    = 1.02
-    else:   # stable
+        onset_step = n_steps + 1
+        cr_mult    = 1.015
+    else:
         onset_step = n_steps + 1
         cr_mult    = 1.00
 
-    rows = []
+    static = _static_row(patient_meta)
+    rows   = []
     creatinine = base_cr
 
     for step in range(n_steps):
-        hours_since_admit = step * 6.0
-
-        # Stop generating after onset (matches window_builder)
         if step >= onset_step:
             break
 
-        # ── Creatinine trajectory ─────────────────────────
-        if 'aki' in trajectory and step >= onset_step - 4:
-            # Rising in the pre-onset window
-            creatinine *= cr_mult * RNG.uniform(0.98, 1.02)
-        elif trajectory == 'borderline' and step > n_steps // 2:
-            creatinine *= RNG.uniform(1.00, 1.015)
-        else:
-            creatinine *= RNG.uniform(0.99, 1.01)  # small random walk
+        hours_since_admit = step * 6.0
+        aki_pre           = 'aki' in trajectory and step >= onset_step - 5
 
+        # Creatinine trajectory
+        if aki_pre:
+            creatinine *= cr_mult * RNG.uniform(0.99, 1.01)
+        elif trajectory == 'borderline' and step > n_steps // 3:
+            creatinine *= RNG.uniform(1.00, 1.01)
+        else:
+            creatinine *= RNG.uniform(0.99, 1.01)
         creatinine = max(creatinine, 10)
 
-        # ── Label ─────────────────────────────────────────
-        # 1 if onset is within the next 24h (4 steps)
+        # Label
         steps_to_onset = onset_step - step
-        label = 1 if 0 < steps_to_onset <= 4 else 0
-        hours_to_onset = steps_to_onset * 6.0 if 'aki' in trajectory else np.nan
+        label          = 1 if 0 < steps_to_onset <= 4 else 0
+        h2o            = steps_to_onset * 6.0 if 'aki' in trajectory else np.nan
 
         row = {
             'patient_id':        patient_id,
             'step_index':        step,
             'hours_since_admit': hours_since_admit,
             'label':             label,
-            'hours_to_onset':    hours_to_onset if 'aki' in trajectory else np.nan,
+            'hours_to_onset':    h2o,
             'aki_stage':         0,
             'trajectory':        trajectory,
             'has_aki':           patient_meta['has_aki'],
         }
 
-        # ── Lab features ──────────────────────────────────
-        # Creatinine
-        row.update(_lab_row('creatinine', creatinine, 0.04))
+        # Static features (same every step)
+        row.update(static)
 
-        # Other labs — perturb normals
+        # Lab features
         for lab in CANONICAL_LABS:
-            if lab == 'creatinine':
-                continue
             lo, hi, _ = LAB_NORMALS[lab]
             base_val   = RNG.uniform(lo, hi)
 
-            # Worsen some labs in AKI trajectory pre-onset
-            if 'aki' in trajectory and step >= onset_step - 6:
-                if lab in ['ph', 'bicarbonate']:
-                    base_val = lo - RNG.uniform(0, (hi-lo)*0.3)
-                elif lab in ['potassium']:
-                    base_val = hi + RNG.uniform(0, (hi-lo)*0.2)
-                elif lab in ['chloride']:
-                    base_val = hi + RNG.uniform(0, (hi-lo)*0.3)
-                elif lab in ['lactate']:
-                    base_val = hi + RNG.uniform(0, hi*0.5)
-                elif lab in ['po2', 'spo2', 'tao2']:
+            if lab == 'creatinine':
+                base_val = creatinine
+            elif aki_pre:
+                # Worsen relevant labs
+                if lab in ['ph','bicarbonate','base_excess']:
                     base_val = lo - RNG.uniform(0, (hi-lo)*0.4)
-                elif lab in ['urea']:
-                    base_val = hi + RNG.uniform(0, hi*0.3)
+                elif lab in ['potassium','chloride']:
+                    base_val = hi + RNG.uniform(0, (hi-lo)*0.3)
+                elif lab in ['lactate','crp','troponin']:
+                    base_val = hi + RNG.uniform(0, hi*0.6)
+                elif lab in ['po2','spo2','tao2']:
+                    base_val = lo - RNG.uniform(0, (hi-lo)*0.4)
+                elif lab in ['urea','egfr']:
+                    if lab == 'urea':
+                        base_val = hi + RNG.uniform(0, hi*0.4)
+                    else:
+                        base_val = lo - RNG.uniform(0, lo*0.3)
 
-            row.update(_lab_row(lab, base_val))
+            row.update(_lab_row(lab, base_val, aki_pre))
 
-        # ── Medications ───────────────────────────────────
-        for col in NEPHROTOXIN_COLS:
+        # Nephrotoxins
+        active_drugs = set(nephrotoxins)
+        for col in NEPHROTOXIN_BINARY:
             drug = col.replace('nephrotoxin_', '')
-            row[col] = 1 if drug in nephrotoxins else int(RNG.random() < 0.05)
+            if col == 'nephrotoxin_any':
+                row[col] = 1 if any(
+                    row.get(f'nephrotoxin_{d}', 0) for d in
+                    [c.replace('nephrotoxin_','') for c in NEPHROTOXIN_BINARY
+                     if c != 'nephrotoxin_any']
+                ) else 0
+            else:
+                row[col] = 1 if drug in active_drugs else int(RNG.random() < 0.03)
 
+        # Nephrotoxin counts
+        for col in NEPHROTOXIN_BINARY:
+            if col == 'nephrotoxin_any':
+                continue
+            drug = col.replace('nephrotoxin_', '')
+            is_active = drug in active_drugs or row.get(col, 0)
+            row[f'nephrotoxin_{drug}_count'] = (
+                int(RNG.integers(1, 4)) if is_active else 0
+            )
+        row['nephrotoxin_total_count'] = sum(
+            row.get(f'{c}_count', 0) for c in NEPHROTOXIN_BINARY
+            if c != 'nephrotoxin_any'
+        )
+
+        # Drug classes
+        p_drug = 0.65 if cardiac else 0.35
         for col in DRUG_CLASS_COLS:
-            p_drug = 0.6 if cardiac else 0.3
             row[col] = int(RNG.random() < p_drug)
 
-        # ── Static features ───────────────────────────────
-        row.update(_static_features(patient_meta))
+        # Summary counts
+        row['n_unique_drugs'] = int(
+            sum(row[c] for c in DRUG_CLASS_COLS) +
+            sum(row[c] for c in NEPHROTOXIN_BINARY if c != 'nephrotoxin_any')
+        )
+        row['n_procedures'] = len(procedures)
 
         rows.append(row)
 
-    df              = pd.DataFrame(rows)
-    df['patient_id']= patient_id
-    df['age_years'] = age_years
-    df['sex']       = sex
-    df['age_band']  = age_band
-    df['cardiac']   = int(cardiac)
-    df['onset_step']= onset_step if 'aki' in trajectory else -1
-
+    df = pd.DataFrame(rows)
     return df, patient_meta
 
 
 def generate_demo_cohort(n_patients: int = 30,
                           seed: int = 42) -> tuple:
-    """
-    Generate a cohort of synthetic PICU patients.
-    Mix of AKI and non-AKI cases with varying trajectories.
-
-    Returns (all_windows_df, patients_meta_df)
-    """
+    """Generate 30 synthetic PICU patients."""
     global RNG
     RNG = np.random.default_rng(seed)
 
-    # Define patient mix
-    patient_specs = [
-        # AKI cases — various severity and timing
-        ('P001', 20, 'aki_severe',   True,  7.2, 'male',   ['vancomycin']),
-        ('P002', 16, 'aki_moderate', True,  5.1, 'female', []),
-        ('P003', 24, 'aki_gradual',  False, 9.3, 'male',   ['gentamicin', 'vancomycin']),
-        ('P004', 12, 'aki_severe',   True,  4.5, 'female', ['contrast']),
-        ('P005', 18, 'aki_late',     False, 14.2,'male',   []),
-        ('P006', 10, 'aki_moderate', False, 2.1, 'female', ['tacrolimus']),
-        ('P007', 22, 'aki_gradual',  True,  11.0,'male',   []),
-        ('P008', 14, 'aki_severe',   True,  8.7, 'female', ['vancomycin','contrast']),
-        ('P009', 16, 'aki_moderate', False, 13.5,'male',   ['nsaid']),
-        ('P010', 20, 'aki_late',     True,  6.0, 'female', []),
-        # Borderline — amber zone
-        ('P011', 18, 'borderline',   True,  7.8, 'male',   ['vancomycin']),
-        ('P012', 14, 'borderline',   False, 12.1,'female', []),
-        ('P013', 22, 'borderline',   True,  5.5, 'male',   ['gentamicin']),
-        ('P014', 16, 'borderline',   False, 10.2,'female', []),
-        ('P015', 12, 'borderline',   False, 3.3, 'male',   []),
-        # Stable non-AKI
-        ('P016', 24, 'stable',       False, 15.0,'female', []),
-        ('P017', 16, 'stable',       False, 8.0, 'male',   []),
-        ('P018', 20, 'stable',       False, 11.5,'female', []),
-        ('P019', 14, 'stable',       True,  6.2, 'male',   []),
-        ('P020', 18, 'stable',       False, 14.0,'female', []),
-        ('P021', 12, 'stable',       False, 4.5, 'male',   []),
-        ('P022', 22, 'stable',       True,  9.0, 'female', []),
-        ('P023', 16, 'stable',       False, 7.3, 'male',   []),
-        ('P024', 20, 'stable',       False, 12.8,'female', []),
-        ('P025', 14, 'stable',       False, 5.1, 'male',   []),
-        ('P026', 18, 'stable',       True,  10.5,'female', ['vancomycin']),
-        ('P027', 16, 'stable',       False, 8.9, 'male',   []),
-        ('P028', 12, 'stable',       False, 2.8, 'female', []),
-        ('P029', 22, 'stable',       True,  16.0,'male',   []),
-        ('P030', 20, 'stable',       False, 13.2,'female', []),
-    ]
+    specs = [
+        # (pid, n_steps, trajectory, cardiac, age, sex, nephrotoxins)
+        ('P001', 20, 'aki_severe',   True,  7.2,  'male',   ['vancomycin']),
+        ('P002', 16, 'aki_moderate', True,  5.1,  'female', []),
+        ('P003', 24, 'aki_gradual',  False, 9.3,  'male',   ['gentamicin','vancomycin']),
+        ('P004', 12, 'aki_severe',   True,  4.5,  'female', ['contrast']),
+        ('P005', 18, 'aki_late',     False, 14.2, 'male',   []),
+        ('P006', 10, 'aki_moderate', False, 2.1,  'female', ['tacrolimus']),
+        ('P007', 22, 'aki_gradual',  True,  11.0, 'male',   []),
+        ('P008', 14, 'aki_severe',   True,  8.7,  'female', ['vancomycin','contrast']),
+        ('P009', 16, 'aki_moderate', False, 13.5, 'male',   ['ibuprofen']),
+        ('P010', 20, 'aki_late',     True,  6.0,  'female', []),
+        ('P011', 18, 'borderline',   True,  7.8,  'male',   ['vancomycin']),
+        ('P012', 14, 'borderline',   False, 12.1, 'female', []),
+        ('P013', 22, 'borderline',   True,  5.5,  'male',   ['gentamicin']),
+        ('P014', 16, 'borderline',   False, 10.2, 'female', []),
+        ('P015', 12, 'borderline',   False, 3.3,  'male',   []),
+        ('P016', 24, 'stable',       False, 15.0, 'female', []),
+        ('P017', 16, 'stable',       False, 8.0,  'male',   []),
+        ('P018', 20, 'stable',       False, 11.5, 'female', []),
+        ('P019', 14, 'stable',       True,  6.2,  'male',   []),
+        ('P020', 18, 'stable',       False, 14.0, 'female', []),
+        ('P021', 12, 'stable',       False, 4.5,  'male',   []),
+        ('P022', 22, 'stable',       True,  9.0,  'female', []),
+        ('P023', 16, 'stable',       False, 7.3,  'male',   []),
+        ('P024', 20, 'stable',       False, 12.8, 'female', []),
+        ('P025', 14, 'stable',       False, 5.1,  'male',   []),
+        ('P026', 18, 'stable',       True,  10.5, 'female', ['vancomycin']),
+        ('P027', 16, 'stable',       False, 8.9,  'male',   []),
+        ('P028', 12, 'stable',       False, 2.8,  'female', []),
+        ('P029', 22, 'stable',       True,  16.0, 'male',   []),
+        ('P030', 20, 'stable',       False, 13.2, 'female', []),
+    ][:n_patients]
 
-    # Trim to n_patients
-    patient_specs = patient_specs[:n_patients]
+    all_windows, all_meta = [], []
 
-    all_windows = []
-    all_meta    = []
-
-    for pid, n_steps, traj, cardiac, age, sex, drugs in patient_specs:
+    for pid, n_steps, traj, cardiac, age, sex, drugs in specs:
         windows_df, meta = generate_patient(
             patient_id   = pid,
             n_steps      = n_steps,
@@ -418,6 +437,9 @@ def generate_demo_cohort(n_patients: int = 30,
         all_windows.append(windows_df)
         all_meta.append({
             'patient_id':  pid,
+            'name':        _fake_name(pid),
+            'dob':         _fake_dob(age),
+            'nhs_number':  _fake_nhs(pid),
             'trajectory':  traj,
             'has_aki':     'aki' in traj,
             'cardiac':     cardiac,
@@ -425,60 +447,37 @@ def generate_demo_cohort(n_patients: int = 30,
             'sex':         sex,
             'nephrotoxins':drugs,
             'n_steps':     len(windows_df),
-            'name':        _fake_name(pid),
-            'dob':         _fake_dob(age),
-            'nhs_number':  _fake_nhs(pid),
         })
 
     windows_df = pd.concat(all_windows, ignore_index=True)
     meta_df    = pd.DataFrame(all_meta)
 
     print(f"Generated {len(meta_df)} patients, "
-          f"{len(windows_df)} total windows")
-    print(f"  AKI:        {meta_df['has_aki'].sum()}")
-    print(f"  Borderline: {(meta_df['trajectory']=='borderline').sum()}")
-    print(f"  Stable:     {(meta_df['trajectory']=='stable').sum()}")
-
+          f"{len(windows_df)} windows, "
+          f"{windows_df.shape[1]} columns")
     return windows_df, meta_df
 
 
-# ── Fake identifiers (clearly synthetic) ─────────────────
+# ── Fake identifiers ─────────────────────────────────────
 
-_FIRST_NAMES = [
-    'Oliver','Amelia','George','Isla','Harry','Poppy','Noah','Ava',
-    'Jack','Lily','Charlie','Grace','Freddie','Sophia','Archie','Emily',
-    'Leo','Ella','Oscar','Scarlett','Henry','Mia','Theo','Chloe',
-    'Alfie','Layla','Arthur','Isabella','Tommy','Evie',
-]
-_LAST_NAMES = [
-    'Smith','Jones','Williams','Taylor','Brown','Davies','Evans','Wilson',
-    'Thomas','Roberts','Johnson','Walker','Wright','Robinson','Thompson',
-    'White','Hughes','Edwards','Green','Hall',
-]
+_FIRST = ['Oliver','Amelia','George','Isla','Harry','Poppy','Noah','Ava',
+           'Jack','Lily','Charlie','Grace','Freddie','Sophia','Archie','Emily',
+           'Leo','Ella','Oscar','Scarlett','Henry','Mia','Theo','Chloe',
+           'Alfie','Layla','Arthur','Isabella','Tommy','Evie']
+_LAST  = ['Smith','Jones','Williams','Taylor','Brown','Davies','Evans','Wilson',
+           'Thomas','Roberts','Johnson','Walker','Wright','Robinson','Thompson',
+           'White','Hughes','Edwards','Green','Hall']
 
 
-def _fake_name(pid: str) -> str:
-    idx   = int(pid[1:]) - 1
-    first = _FIRST_NAMES[idx % len(_FIRST_NAMES)]
-    last  = _LAST_NAMES[idx % len(_LAST_NAMES)]
-    return f'{first} {last}'
+def _fake_name(pid):
+    i = int(pid[1:]) - 1
+    return f'{_FIRST[i % len(_FIRST)]} {_LAST[i % len(_LAST)]}'
 
-
-def _fake_dob(age_years: float) -> str:
+def _fake_dob(age):
     import datetime
-    today     = datetime.date(2024, 6, 1)  # fixed reference date
-    days_old  = int(age_years * 365.25)
-    dob       = today - datetime.timedelta(days=days_old)
-    return dob.strftime('%d/%m/%Y')
+    today = datetime.date(2024, 6, 1)
+    return (today - datetime.timedelta(days=int(age*365.25))).strftime('%d/%m/%Y')
 
-
-def _fake_nhs(pid: str) -> str:
-    """Generate a clearly fake NHS number."""
-    idx = int(pid[1:])
-    return f'999 {idx:03d} {(idx*7)%1000:04d}'
-
-
-if __name__ == '__main__':
-    windows, meta = generate_demo_cohort(30)
-    print(windows.head())
-    print(meta[['patient_id','name','trajectory','age_years','sex']].to_string())
+def _fake_nhs(pid):
+    i = int(pid[1:])
+    return f'999 {i:03d} {(i*7)%1000:04d}'

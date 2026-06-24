@@ -29,8 +29,8 @@ from plotly.subplots import make_subplots
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'src'))
 
-from fake_data import generate_demo_cohort, LAB_NORMALS
-from model     import AKIPredictor, traffic_light, TL_COLOURS, TL_EMOJI
+from inference.fake_data import generate_demo_cohort, LAB_NORMALS
+from model import AKIPredictor, traffic_light, TL_COLOURS, TL_EMOJI
 
 
 # ─────────────────────────────────────────────────────────
