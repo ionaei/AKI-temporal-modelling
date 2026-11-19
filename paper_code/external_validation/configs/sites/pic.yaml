@@ -1,0 +1,134 @@
+# Paediatric Intensive Care database (PIC v1.1.0, PhysioNet), Children's Hospital,
+# Zhejiang University School of Medicine. External validation only (no training).
+# Column names follow tools/inspect_raw.py; ITEMIDs were chosen with tools/discover_codes.py.
+adapter: mimic_like
+output_dir: data/pic
+raw_dir: /path/to/picdb/1.1.0         # folder holding the PhysioNet CSV.GZ files
+files:
+  patients: PATIENTS.csv.gz
+  icustays: ICUSTAYS.csv.gz
+  labevents: LABEVENTS.csv.gz
+  chartevents: CHARTEVENTS.csv.gz
+  prescriptions: PRESCRIPTIONS.csv.gz
+  d_items: D_ITEMS.csv.gz
+  d_labitems: D_LABITEMS.csv.gz
+  outputevents: OUTPUTEVENTS.csv.gz
+columns:
+  subject: SUBJECT_ID
+  itemid: ITEMID
+  charttime: CHARTTIME
+  valuenum: VALUENUM
+  valueuom: VALUEUOM
+  value: VALUE                 # text result, used where VALUENUM is blank ('<0.50', '>110.0')
+  careunit: FIRST_CAREUNIT
+  intime: INTIME
+  outtime: OUTTIME
+  dob: DOB
+  gender: GENDER
+sex_map: {M: M, F: F}
+# Care units (FIRST_CAREUNIT): NICU 3282, SICU 2902, CICU 2803, General ICU 2788, PICU 2166.
+# NICU stays are excluded; PICU, SICU, CICU and general ICU stays are included.
+exclude_careunits: [NICU]
+
+common_overrides:
+  cohort:
+    merge_gap_hours: 4          # same as GOSH: ICU transfers merge, readmissions do not
+  split:
+    holdout: {enabled: false}   # external site: no silent-deployment hold-out
+
+labs:
+  # Chosen from discover_codes.py + D_LABITEMS LABEL_CN. Temperature-corrected '(T)' items,
+  # standard bicarbonate/base excess, derived pO2 quantities, analyser bilirubin, CSF/urine
+  # items and non-serum 'Sodium' 5062 (median 70) are deliberately excluded, as at GOSH.
+  map:
+    creatinine: [5041]               # 5032 (dry-slide method, also LOINC 2160-0) is not used
+    urea: [5033, 6477]
+    sodium: [5230]
+    potassium: [5226]                # FLUID says 'Other Body Fluid' but gas panel, median 3.7
+    chloride: [5218]
+    bicarbonate: [5224]              # actual HCO3- (not 5248 standard bicarbonate SBC)
+    glucose: [5223]
+    calcium_total: [5034]
+    calcium_ionised: [5215]          # labelled 'Calcium, Total'; LABEL_CN = ionised, median 1.19
+    phosphate: [5072]
+    magnesium: [5059]
+    albumin: [5024, 6465]
+    bilirubin_total: [5075]
+    alt: [5026, 5195]
+    crp: [5626, 5821]
+    haemoglobin: [5099, 5257]
+    haematocrit: [5097, 5225]
+    wbc: [5141]
+    platelets: [5129]
+    lactate: [5227]
+    ph: [5237]                       # not 5238 pH(T)
+    pco2: [5235]                     # not 5236 pCO2(T)
+    po2: [5239]                      # not 5244 pO2(T)
+    base_excess: [5211]              # actual base excess ABE (not 5249 SBE)
+    fio2: [5222]                     # FO2(I), as POCFI02 at GOSH
+  default_units_by_code:
+    "5257": g/dL                     # gas Hb: blank-unit rows have median 10.25
+  default_units:                    # only where VALUEUOM is blank (12% of rows); compare
+    creatinine: umol/L              #   with the medians in unit_report.csv after extract
+    urea: mmol/L
+    sodium: mmol/L
+    potassium: mmol/L
+    chloride: mmol/L
+    bicarbonate: mmol/L
+    glucose: mmol/L
+    calcium_total: mmol/L
+    calcium_ionised: mmol/L
+    phosphate: mmol/L
+    magnesium: mmol/L
+    albumin: g/L
+    bilirubin_total: umol/L
+    alt: U/L
+    crp: mg/L
+    haemoglobin: g/L
+    wbc: 10^9/L
+    platelets: 10^9/L
+    lactate: mmol/L
+    base_excess: mmol/L
+    pco2: mmHg                      # PIC blood gases are in mmHg (GOSH: kPa); converted to kPa
+    po2: mmHg
+
+# Vital signs are NOT used, matching GOSH. An empty map: CHARTEVENTS is not read.
+vitals:
+  map: {}
+
+prescriptions:
+  columns:
+    subject: SUBJECT_ID
+    start: STARTDATE                # has a time of day in 100% of rows
+    end: ENDDATE                    # missing in 78%
+    name: DRUG_NAME_EN
+    name_alt: DRUG_NAME_GENERIC
+    route: DRUG_FORM                # no ROUTE column; form is the closest equivalent
+  date_only_policy: none            # real times: do not shift midnight starts
+  missing_end_hours: 0              # no end = single administration (as GOSH admin rows)
+  # DRUG_FORM -> route. 'water aqua' mixes eye drops, creams, inhalers, oral liquids and
+  # suppositories, so its route is read from the drug name ('@name'), as at GOSH.
+  route_value_map:
+    injection: iv
+    tablet/capsule: oral
+    powder: oral
+    chinese patent drug: oral
+    water aqua: "@name"
+    excipient: unknown
+  # name-based rules take precedence over the form (checked against PIC drug names)
+  route_name_rules:
+    - ['emulgel|\bgel\b|tincture|liniment|lotion|cream|ointment|\bpatch', topical]
+    - ['\beye\b|ophthalmic', ophthalmic]
+    - ['\bear drops', otic]
+    - ['inhal|nebul|aerosol', inhaled]
+    - ['nasal|\bspray\b', topical]
+    - ['suppositor|enema', rectal]
+
+rrt:
+  itemids: []                       # no dialysis/CRRT items in D_ITEMS
+  # Only peritoneal dialysis is identifiable (293 rows); CRRT cannot be detected at PIC.
+  drug_name_regex: "peritoneal dialysis"
+
+discover:
+  d_labitems_label_col: LABEL
+  d_items_label_col: LABEL

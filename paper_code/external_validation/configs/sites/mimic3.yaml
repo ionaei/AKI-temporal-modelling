@@ -1,0 +1,185 @@
+# MIMIC-III v1.4 — NEONATAL scope only (NICU, 2001-2008, CareVue era).
+# MIMIC-III has adults >= 16 y and ~7,900 neonates and essentially no children in
+# between, so only NICU stays are used. Labels follow the neonatal-modified KDIGO
+# rules automatically for samples taken before 28 days of age (common.yaml).
+# External validation only (no training). Lab ITEMIDs follow the MIMIC-III documentation
+# and can be audited with:
+#   python tools/discover_codes.py --site mimic3 --skip-chartevents
+adapter: mimic_like
+output_dir: data/mimic3
+raw_dir: /path/to/mimiciii/1.4         # folder holding the PhysioNet CSV.GZ files
+files:
+  patients: PATIENTS.csv.gz
+  icustays: ICUSTAYS.csv.gz
+  labevents: LABEVENTS.csv.gz
+  chartevents: CHARTEVENTS.csv.gz
+  prescriptions: PRESCRIPTIONS.csv.gz
+  d_items: D_ITEMS.csv.gz
+  d_labitems: D_LABITEMS.csv.gz
+  inputevents_cv: INPUTEVENTS_CV.csv.gz
+  outputevents: OUTPUTEVENTS.csv.gz
+columns:
+  subject: SUBJECT_ID
+  itemid: ITEMID
+  charttime: CHARTTIME
+  valuenum: VALUENUM
+  valueuom: VALUEUOM
+  value: VALUE                 # text result, used where VALUENUM is blank ('<0.2')
+  careunit: FIRST_CAREUNIT
+  intime: INTIME
+  outtime: OUTTIME
+  dob: DOB
+  gender: GENDER
+sex_map: {M: M, F: F}
+dob_from_same_day_admission: true   # DOB has no time: NICU admission on the birth date
+                                    # is taken as birth time (conservative for the 72h rule)
+include_careunits: [NICU]      # NWARD (neonatal step-down) is not ICU: excluded
+
+common_overrides:
+  cohort:
+    max_age_days: 365          # NICU stays only; infants admitted later in the first year kept
+    merge_gap_hours: 4         # same as GOSH and PIC
+  split:
+    holdout: {enabled: false}  # external site: no silent-deployment hold-out
+
+labs:
+  map:
+    creatinine: [50912]        # serum creatinine, LOINC 2160-0
+    urea: [51006]              # BUN mg/dL -> urea mmol/L
+    sodium: [50983, 50824]     # chemistry + blood gas (as GOSH lab + POC)
+    potassium: [50971, 50822]
+    chloride: [50902, 50806]
+    bicarbonate: [50882, 50803]  # chemistry bicarbonate + blood-gas actual HCO3 (as GOSH/PIC);
+                                 # NOT 50804 'calculated total CO2' (derived, same gas sample)
+    glucose: [50931, 50809]
+    calcium_total: [50893]
+    calcium_ionised: [50808]
+    phosphate: [50970]
+    magnesium: [50960]
+    albumin: [50862]
+    bilirubin_total: [50885]
+    alt: [50861]
+    crp: [50889]
+    haemoglobin: [51222, 50811]
+    haematocrit: [51221, 50810]
+    wbc: [51301, 51300]
+    platelets: [51265]
+    lactate: [50813]
+    ph: [50820]
+    pco2: [50818]
+    po2: [50821]
+    base_excess: [50802]
+    fio2: [50816]              # blood-gas FiO2
+  default_units: {creatinine: mg/dL, urea: mg/dL, glucose: mg/dL, calcium_total: mg/dL,
+                  phosphate: mg/dL, magnesium: mg/dL, albumin: g/dL, bilirubin_total: mg/dL,
+                  haemoglobin: g/dL, pco2: mmHg, po2: mmHg, sodium: mEq/L, potassium: mEq/L,
+                  chloride: mEq/L, bicarbonate: mEq/L, calcium_ionised: mmol/L,
+                  lactate: mmol/L, base_excess: mEq/L, wbc: K/uL, platelets: K/uL,
+                  alt: IU/L, crp: mg/L}
+  default_units_by_code: {}
+
+# Vital signs are NOT used, matching GOSH and PIC. An empty map: CHARTEVENTS
+# (~4 GB) is not read at all.
+vitals:
+  map: {}
+
+prescriptions:
+  columns:
+    subject: SUBJECT_ID
+    start: STARTDATE
+    end: ENDDATE
+    name: DRUG
+    name_alt: DRUG_NAME_GENERIC
+    route: ROUTE
+  date_only_policy: end_of_day   # MIMIC-III PRESCRIPTIONS has dates only: no future leakage
+  missing_end_hours: 24
+  # MIMIC route abbreviations -> words route_class() understands.
+  route_value_map:               # MIMIC-III ROUTE values (inspect_raw.py) -> route words
+    IH: inhaled
+    NEB: inhaled
+    INHALATION: inhaled
+    NU: inhaled                  # appears with nebulised drugs
+    TP: topical
+    TD: topical                  # transdermal
+    VG: topical                  # vaginal
+    IR: topical                  # irrigation
+    IN: topical                  # intranasal
+    PL: local
+    OU: ophthalmic
+    OS: ophthalmic
+    OD: ophthalmic
+    BOTH EYES: ophthalmic
+    LEFT EYE: ophthalmic
+    RIGHT EYE: ophthalmic
+    AU: otic
+    AD: otic
+    AS: otic
+    BOTH EARS: otic
+    PR: rectal
+    IT: intrathecal
+    DWELL: lock                  # catheter lock (e.g. heparin, vancomycin lock)
+    DIALYS: local                # dialysate additive, not systemic dosing; also flags RRT below
+    REPLACE: local               # CRRT replacement fluid; also flags RRT below
+    SL: oral
+    PB: iv                       # piggyback
+    ET: inhaled                  # endotracheal (e.g. surfactant)
+    TT: inhaled                  # via tracheostomy tube
+    AERO: inhaled
+    OG: oral
+    NG/OG: oral
+    PO/OG: oral
+    ND: oral                     # nasoduodenal
+    BU: oral                     # buccal
+    BUCCAL: oral
+    PO/PR: oral
+    PO/IV: iv
+    LOCK: lock
+    NAS: topical                 # nasal
+    NS: topical
+    IRR: topical
+    RIGHT EAR: otic
+    LEFT EAR: otic
+    IVT: ophthalmic              # intravitreal
+    RECTAL: rectal
+    IJ: local                    # intra-articular
+    IP: local                    # intraperitoneal (e.g. PD antibiotics)
+    PERIPHNERVE: local
+    LUMBAR PLEXUS: local
+    INTERSPACE: local
+    AXILLARY: local
+    INTRAPERICARDIAL: local
+    EX-VIVO: local
+    IO: iv                       # intraosseous
+    IA: iv                       # intra-arterial
+    IVS: iv
+    IC: iv
+    SCPCA: iv
+    SCPUMP: iv
+    ED: unknown                  # meaning unclear in MIMIC; counted as systemic (default)
+  route_name_rules:
+    - ['ophth|\beye\b', ophthalmic]
+    - ['\bcream\b|ointment|\bgel\b|lotion', topical]
+
+# CareVue infusions (NICU 2001-2008). Each charted row = an exposure point; the drug
+# group's 'on therapy' carry is added as for every site. Gentamicin chest-irrigation
+# items and the vancomycin enema are deliberately NOT listed (not systemic).
+inputevents:
+  - table: inputevents_cv
+    start: CHARTTIME
+    itemids: [30043, 30307,               # dopamine
+              30044, 30119, 30309,        # epinephrine
+              30051, 42273, 42802,        # vasopressin
+              30042, 30306,               # dobutamine
+              30125,                      # milrinone
+              30070, 44467,               # amphotericin
+              41193, 42813, 44324, 44331, 43677, 43693, 45661, 41093,   # ciclosporin
+              45275, 46690]               # bumetanide
+
+rrt:
+  itemids: []
+  route_values: [DIALYS, REPLACE]  # dialysate / CRRT replacement fluid prescriptions
+  drug_name_regex: "dialys|prismasate|replacement fluid|peritoneal dialysis|cvvh|crrt|normocarb"
+
+discover:
+  d_labitems_label_col: LABEL
+  d_items_label_col: LABEL

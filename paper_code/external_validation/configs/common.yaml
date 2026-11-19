@@ -1,0 +1,92 @@
+# Study-wide settings. Site files may override any of these under `common_overrides:`.
+
+cohort:
+  merge_gap_hours: 24        # episodes closer than this are one stay
+  min_age_days: 0
+  max_age_days: 6574.5       # < 18 years
+  min_los_hours: 6           # need at least one 6h window
+
+labelling:
+  abs_rise_umol: 26.5        # KDIGO: >= 0.3 mg/dL within 48h
+  ratio: 1.5                 # KDIGO: >= 1.5 x reference; reference = min of the preceding 7 days
+  older_baseline_days: 90    # fallback reference window if no value in the last 7 days
+  older_baseline_days_infant: 30   # same, for samples taken before 1 year of age
+  allow_population_baseline: false # unsourced age/sex table removed; AKI needs a measured reference
+  stage3_abs_umol: 353.6     # >= 4.0 mg/dL (paediatric eGFR<35 criterion not implementable: no height)
+  stage_window_days: 7       # peak stage measured over onset .. onset + 7d
+  neonatal_max_age_days: 28  # sample-level: neonatal-modified KDIGO below this age
+  neonatal_ignore_first_h: 72      # maternal creatinine / early physiological rise
+  neonatal_stage3_umol: 221  # >= 2.5 mg/dL
+  exclude_onset_before_h: 24 # AKI on arrival -> excluded (kept in labels table)
+  pre_admission_aki_lookback_days: 7   # AKI already met before admission (e.g. on the ward)
+  exclude_aki_before_admission: true
+  prior_rrt_exclusion_days: 90
+  min_creatinine_in_stay: 2  # AKI-evaluable cohort: >=1 in stay and >=2 incl. possible
+                             # pre-admission references; 0 = everyone (sensitivity analysis)
+
+windows:
+  step_h: 6
+  horizon_h: 24
+  max_windows: 1200          # 300 days; longer stays are truncated at the END (logged)
+  hours_since_cap_h: 168
+  pre_admission_med_carry: false   # doses before admission do not carry into stay windows
+
+features:
+  # groups: static time creatinine lab vital support med process
+  include_groups: [static, time, creatinine, lab, vital, support, med, process]
+  age_normalise_prefixes: [vit_hr_, vit_rr_, vit_sbp_, vit_dbp_, vit_map_,
+                           lab_creatinine_, lab_urea_, lab_phosphate_, lab_haemoglobin_]
+  clip: 10.0
+  drop: []
+  core_min_non_null: 0.05          # feature must be observed in >=5% of windows at every site
+  core_min_nonzero_binary: 0.001
+
+split:
+  holdout:                   # temporal hold-out (never used in model development)
+    enabled: true
+    months: 6                # cutoff = last valid ICU admission - 6 months
+    date: null               # or a fixed cutoff, e.g. "2022-07-01" (overrides months)
+    exclude_straddling: true # development stays must be discharged before the cutoff
+  method: patient_random     # or: temporal  (within the development period)
+  fractions: {val: 0.15, test: 0.15}
+  seed: 42
+  test_start: "2022-01-01"   # temporal only
+  drop_seen_patients_from_test: false
+
+model:
+  hidden: 128
+  layers: 2
+  dropout: 0.3
+  heads: 4
+
+training:
+  loss: bce                  # bce | focal
+  pos_weight: sqrt           # auto (neg/pos) | sqrt | a number; ignored by focal
+  focal_alpha: 0.75          # weight of the POSITIVE class
+  focal_gamma: 2.0
+  lr: 0.0005
+  weight_decay: 0.0001
+  epochs: 60
+  patience: 10
+  grad_clip: 1.0
+  context_windows: 120       # transformer attention lookback (30 days)
+  train_crop_windows: 240    # transformer training crops; RNNs always see full stays
+  max_tokens_train: 12000    # batch = stays whose padded length x count <= this
+  max_tokens_eval: 40000
+
+evaluation:
+  # Operating points, all chosen on VALIDATION and applied unchanged elsewhere.
+  # Stay-level definitions: sensitivity (legacy_sens_ever) = AKI stays with ANY alert before
+  # onset; specificity (legacy_spec_stay) = non-AKI stays never alerted.
+  #   orig_spec_at_sens0.75  PRIMARY operating point in the paper: maximum stay-level
+  #                          specificity subject to stay-level sensitivity >= 0.75
+  #   orig_youden            maximum stay-level Youden's J
+  #   sens48_0.80            sensitivity within 48 h of onset >= 0.80
+  #   alerts_10_per_100pd    at most 10 alerts per 100 patient-days
+  # The per-stay subgroup table written by `evaluate` (subgroups.csv) uses the first entry.
+  operating_points:
+    sens48_0.80: {metric: "sens@48h", min: 0.80}
+    alerts_10_per_100pd: {metric: "alerts_per_100_patient_days", max: 10}
+    orig_youden: {maximise: legacy_youden_stay}
+    orig_spec_at_sens0.75: {maximise: legacy_spec_stay,
+                            subject_to: {metric: legacy_sens_ever, min: 0.75}}
