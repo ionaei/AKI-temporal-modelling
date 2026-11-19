@@ -1,7 +1,4 @@
 {
-  "windows": "data/processed/windows_matched.csv",
-  "split_index": "data/processed/split_index_matched.csv",
-  "models_dir": "data/models",
   "max_seq_len": 100,
   "model": "lstm",
   "attention": true,
@@ -10,13 +7,13 @@
   "dropout": 0.3,
   "heads": 4,
   "loss": "focal",
-  "gamma": 2.0,
+  "gamma": 2,
   "alpha": null,
   "lr": 0.0005,
   "batch": 32,
   "epochs": 80,
   "patience": 15,
-  "grad_clip": 1.0,
+  "grad_clip": 1,
   "seed": 42,
   "name": "lstm_focal_h128_l2_attention"
 }

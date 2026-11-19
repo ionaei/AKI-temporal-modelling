@@ -3,15 +3,12 @@
 Temporal deep learning framework for early prediction of acute kidney
 injury (AKI) in paediatric intensive care, developed at Great Ormond
 Street Hospital (GOSH) and externally validated on the Paediatric
-Intensive Care (PIC) database.
+Intensive Care (PIC) and MIMIC-III datasets.
 
 The model predicts KDIGO-defined AKI onset within a 24-hour horizon,
 using 6-hourly clinical windows constructed from routinely collected
-EHR data (labs, medications, procedures, diagnoses, demographics,
-blood gases). The best-performing architecture (causal Transformer)
-achieves a median early-warning lead time of 58.5 hours before
-KDIGO-defined onset, with independent replication on PIC and a
-twelve-month silent deployment evaluation.
+EHR data (labs, medications, demographics,
+blood gases).
 
 ## Repository structure
 
@@ -42,16 +39,6 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-## Data availability
-
-This repository contains code only. The GOSH clinical dataset used
-for model development is not publicly available due to patient
-privacy and institutional governance restrictions; access can be
-requested through the GOSH Data Research, Innovation and Virtual
-Environments (DRE) unit. The PIC database used for external
-validation is publicly available via PhysioNet
-(https://physionet.org/content/picdb/1.1.0/) under a standard data
-use agreement. See `paper_code/README.md` for details.
 
 
 ## Ethics and governance
