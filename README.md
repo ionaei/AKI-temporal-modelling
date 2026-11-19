@@ -1,5 +1,9 @@
 # AKI Temporal Modelling
 
+By Iona Biggart et al.
+
+Imperial College London and Great Ormond Street Hospital for Children
+
 Temporal deep learning framework for early prediction of acute kidney
 injury (AKI) in paediatric intensive care, developed at Great Ormond
 Street Hospital (GOSH) and externally validated on the Paediatric
