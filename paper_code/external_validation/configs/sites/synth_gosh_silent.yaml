@@ -1,0 +1,3 @@
+# Synthetic 'silent deployment' (same files as synth_gosh) — tests the deploy command only.
+extends: synth_gosh
+output_dir: data/synth_gosh_silent

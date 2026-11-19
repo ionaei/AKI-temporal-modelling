@@ -1,0 +1,162 @@
+# Great Ormond Street Hospital (GOSH): development cohort and temporal hold-out.
+# ICU admissions April 2019 - March 2026, extracted inside the GOSH Digital Research
+# Environment (DRE). The raw extract is not public; paths below are placeholders.
+# Code lists can be audited with:
+#   python tools/discover_codes.py --site gosh
+adapter: gosh
+output_dir: data/gosh
+
+# ICU time only. Episodes are the ward-stay rows flagged as ICU; contiguous ICU
+# ward stays are merged (gap <= common_overrides.cohort.merge_gap_hours).
+ward_stays:
+  path: /path/to/gosh/icu_ward_stays.csv
+  columns: {subject: project_id, start: start_datetime, end: end_datetime,
+            ward: ward_code, icu_flag: icu_ward_stay}
+  icu_values: [1, "1", "1.0", "true", "y", "yes"]
+  icu_wards: [PICU, CICU, NICU, ALLIGATOR]   # ICU ward names (OR-ed with the ICU flag)
+
+common_overrides:
+  cohort:
+    merge_gap_hours: 4     # ICU bed moves merge; ward time in between is not windowed
+
+# hospital admissions are only used if ward_stays.path is null
+admissions:
+  path: /path/to/gosh/hospital_admissions.csv
+  columns: {subject: project_id, start: start_datetime, end: end_datetime, unit: null}
+  filter: {}            # e.g. {ward_type: [PICU, NEPHROLOGY]} if the file holds other wards
+
+demographics:
+  path: /path/to/gosh/demographics.csv
+  columns: {subject: project_id, dob: birth_date, sex: sex_name}
+  sex_map: {Male: M, Female: F, M: M, F: F}
+
+labs:
+  path: /path/to/gosh/lab_components.csv
+  # The result time is used both for labelling and for features.
+  columns: {subject: project_id, time: end_datetime, code: component_basename,
+            value: NumericValue, unit: Unit, value_text: Value}
+  # Explicit basename lists only (no substring or fuzzy matching). Urine creatinine,
+  # conjugated/unconjugated bilirubin and temperature-corrected blood-gas codes are not
+  # mapped. Where only a point-of-care code is listed, the laboratory analyte is not used.
+  map:
+    creatinine: [CREAT]
+    urea: [UREA]
+    sodium: [NA1, POCSODIUM, POCNAISTAT]
+    potassium: [POCPOTASSIU]
+    chloride: [POCCL, CL]
+    bicarbonate: [POCHCO3, POCBICARBI]
+    glucose: [GLU, POCGLUCOSE]
+    calcium_total: [CA]
+    calcium_ionised: [ICA, POCCALCIUM]
+    phosphate: [PO5]
+    magnesium: [MG]
+    albumin: [ALB]
+    bilirubin_total: [TBIL]
+    alt: [ALT]
+    crp: [CRP]
+    haemoglobin: [POCCTHB]
+    haematocrit: [POCHCT]
+    wbc: [WBC1]
+    platelets: [PLT1]
+    lactate: [POCLAC]
+    ph: [POCPH]
+    pco2: [POCPCO2]
+    po2: [POCPO2]
+    base_excess: [POCBASEEXC]
+    fio2: [POCFI02]                           # zero, not letter O
+  default_units:            # used only where the Unit cell is blank (UK SI conventions)
+    creatinine: umol/L      # expected median ~30-60
+    urea: mmol/L            # ~3-8
+    sodium: mmol/L          # ~135-145
+    potassium: mmol/L       # ~3.5-5
+    chloride: mmol/L        # ~98-110
+    bicarbonate: mmol/L     # ~20-28
+    glucose: mmol/L         # ~4-10
+    calcium_total: mmol/L   # ~2.1-2.6
+    calcium_ionised: mmol/L # ~1.1-1.35
+    phosphate: mmol/L       # ~1-2
+    magnesium: mmol/L       # ~0.7-1
+    albumin: g/L            # ~30-45
+    bilirubin_total: umol/L # ~5-20
+    alt: U/L                # ~10-50
+    crp: mg/L               # ~1-50
+    haemoglobin: g/L        # ~90-140
+    wbc: 10^9/L
+    platelets: 10^9/L
+    lactate: mmol/L         # ~1-2
+    base_excess: mmol/L
+    pco2: kPa               # ~4.5-6.5
+    po2: kPa
+  default_units_by_code:    # overrides the concept default for blank units of ONE code
+    # POCCTHB: g/dL         # example: use if unit_report.csv shows a median of ~10-14
+
+# Vital signs are not available in the GOSH extract (path: null), so no vital-sign
+# features are built. The block is kept so a flowsheet extract can be added.
+vitals:
+  path: null
+  columns: {subject: project_id, time: start_datetime, code: DisplayName, value: Value, unit: Unit}
+  map:
+    hr: []
+    rr: [Resp]
+    spo2: [SpO2]
+    temp: [Temp]
+    sbp: []
+    dbp: []
+    map: []
+    vent_invasive: []
+  flag_concepts: [vent_invasive]
+  default_units: {hr: /min, rr: /min, spo2: "%", temp: C, sbp: mmHg, dbp: mmHg, map: mmHg}
+
+medications:
+  path: /path/to/gosh/medication_admins.csv
+  columns:
+    subject: project_id
+    name: drug_name
+    gpi: drug_gpi
+    start: null              # no administration start time: start = end_datetime
+    end: end_datetime
+    route: null              # no route column in the extract: every row has route 'unknown'
+  # GOSH local GPI prefixes -> ingredient name understood by the medication groups
+  gpi_to_name:
+    "1004366": vancomycin
+    "3004366": vancomycin
+    "1014273": gentamicin
+    "2003709": gentamicin
+    "1003705": gentamicin
+    "1017681": tacrolimus
+    "1017682": tacrolimus
+    "1015071": ciclosporin
+    "1003418": ciclosporin
+    "1005406": ciclosporin
+    "1008925": amphotericin
+    "1004974": amphotericin
+    "1002592": aciclovir
+    "1003026": aciclovir
+    "2005456": aciclovir
+    "1000043": methotrexate
+    "1015155": cisplatin
+    "1014306": carboplatin
+    "3003868": ifosfamide
+    "2007170": furosemide
+    "1015349": furosemide
+    "2004879": furosemide
+    "1015149": dopamine
+    "1003672": dobutamine
+    "1006478": milrinone
+    "1018210": noradrenaline
+    "1014092": adrenaline
+    "1014094": adrenaline
+
+procedures:
+  path: /path/to/gosh/procedures.csv
+  columns: {subject: project_id, code: proc_local_code, time: start_datetime}
+  rrt_code_prefixes: [X40]   # OPCS-4 X40: compensation for renal failure (dialysis / filtration)
+
+# Renal Angina Index comparison (tools/renal_angina.py)
+rai:
+  ventilation_opcs: [E851, X562]     # invasive ventilation; endotracheal intubation
+  vent_lookback_h: 24                # procedures are often dated rather than timed
+  transplant_icd10: [Z94, T86]
+  diagnoses:                         # used ONLY for the RAI transplant risk stratum
+    path: /path/to/gosh/diagnoses.csv
+    columns: {subject: project_id, code: diag_nat_code, time: start_datetime}

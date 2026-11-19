@@ -1,0 +1,65 @@
+# Synthetic data in MIMIC-III format (tools/make_synthetic.py), used only by the
+# synthetic smoke test (tools/run_synthetic.sh) to exercise the MIMIC-schema adapter and
+# the cross-site code paths. External-validation configs live in ../external_validation.
+adapter: mimic_like
+output_dir: data/synth_mimic
+raw_dir: data/_synthetic/mimic
+files: {patients: PATIENTS.csv, icustays: ICUSTAYS.csv, labevents: LABEVENTS.csv, chartevents: CHARTEVENTS.csv,
+  prescriptions: PRESCRIPTIONS.csv, d_items: D_ITEMS.csv, d_labitems: D_LABITEMS.csv, inputevents_cv: INPUTEVENTS_CV.csv.gz}
+columns: {subject: SUBJECT_ID, itemid: ITEMID, charttime: CHARTTIME, valuenum: VALUENUM, valueuom: VALUEUOM,
+  careunit: FIRST_CAREUNIT, intime: INTIME, outtime: OUTTIME, dob: DOB, gender: GENDER}
+sex_map: {M: M, F: F}
+include_careunits: [NICU]
+common_overrides:
+  cohort: {max_age_days: 365}
+  labelling: {allow_population_baseline: false}
+  split:
+    holdout: {enabled: false}
+  training: {epochs: 4, patience: 2}
+labs:
+  map:
+    creatinine: [50912]
+    urea: [51006]
+    sodium: [50983, 50824]
+    potassium: [50971, 50822]
+    chloride: [50902, 50806]
+    bicarbonate: [50882]
+    glucose: [50931, 50809]
+    calcium_total: [50893]
+    calcium_ionised: [50808]
+    phosphate: [50970]
+    magnesium: [50960]
+    albumin: [50862]
+    bilirubin_total: [50885]
+    alt: [50861]
+    crp: [50889]
+    haemoglobin: [51222, 50811]
+    haematocrit: [51221, 50810]
+    wbc: [51301, 51300]
+    platelets: [51265]
+    lactate: [50813]
+    ph: [50820]
+    pco2: [50818]
+    po2: [50821]
+    base_excess: [50802]
+  default_units: {creatinine: mg/dL, urea: mg/dL, glucose: mg/dL, calcium_total: mg/dL, phosphate: mg/dL,
+    magnesium: mg/dL, albumin: g/dL, bilirubin_total: mg/dL, haemoglobin: g/dL, pco2: mmHg, po2: mmHg}
+vitals:
+  map:
+    hr: [211, 220045]
+    rr: [618, 220210]
+    spo2: [646, 220277]
+    temp: [676, 678, 223761, 223762]
+    sbp: [51, 455, 220050, 220179]
+    dbp: [8368, 8441, 220051, 220180]
+    map: [52, 456, 220052, 220181]
+    fio2: [190, 3420, 223835]
+    vent_invasive: []
+  flag_concepts: [vent_invasive]
+  default_units: {hr: /min, rr: /min, sbp: mmHg, dbp: mmHg, map: mmHg}
+prescriptions:
+  columns: {subject: SUBJECT_ID, start: STARTDATE, end: ENDDATE, name: DRUG, name_alt: null, route: ROUTE}
+  date_only_policy: end_of_day
+inputevents: []
+rrt:
+  itemids: []

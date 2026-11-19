@@ -1,0 +1,12 @@
+# Analyses in the paper were run with Python 3.10, PyTorch 2.5.1 and scikit-learn 1.7.2.
+# Trained runs store scikit-learn objects with joblib: load them with the same
+# scikit-learn version that trained them.
+numpy>=1.24
+pandas>=1.5,<3
+pyarrow>=12
+pyyaml>=6
+scikit-learn>=1.2
+torch>=2.0
+joblib>=1.2
+matplotlib>=3.6
+pytest>=7

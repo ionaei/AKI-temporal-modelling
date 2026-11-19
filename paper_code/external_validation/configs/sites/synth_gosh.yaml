@@ -1,0 +1,23 @@
+# Synthetic data in GOSH format (tools/make_synthetic.py). Run from the project root.
+extends: gosh
+output_dir: data/synth_gosh
+admissions: {path: data/_synthetic/gosh/hospital_admissions.csv}
+ward_stays:
+  path: data/_synthetic/gosh/ward_stays.csv
+  columns: {subject: project_id, start: ward_start, end: ward_end, ward: ward_name,
+            icu_flag: icu_ward_stay}
+demographics: {path: data/_synthetic/gosh/demographics.csv}
+labs:
+  path: data/_synthetic/gosh/lab_components.csv
+  columns: {value_text: null}
+vitals:
+  path: data/_synthetic/gosh/vitals.csv
+  columns: {subject: project_id, time: time, code: code, value: value, unit: null}
+  map: {hr: [HR], map: [MAP], temp: [TEMP]}
+medications:
+  path: data/_synthetic/gosh/medication_admins.csv
+  columns: {start: start_datetime, route: route}
+procedures: {path: data/_synthetic/gosh/procedures.csv}
+rai: {diagnoses: {path: null}}      # no diagnosis file in the synthetic data
+common_overrides:
+  training: {epochs: 4, patience: 2}

@@ -1,0 +1,17 @@
+# Synthetic data in MIMIC-III format (tools/make_synthetic.py). Run from the project root.
+extends: mimic3
+output_dir: data/synth_mimic
+raw_dir: data/_synthetic/mimic
+files:
+  patients: PATIENTS.csv
+  icustays: ICUSTAYS.csv
+  labevents: LABEVENTS.csv
+  chartevents: CHARTEVENTS.csv
+  prescriptions: PRESCRIPTIONS.csv
+  d_items: D_ITEMS.csv
+  d_labitems: D_LABITEMS.csv
+prescriptions:
+  columns: {name_alt: null}
+inputevents: []
+common_overrides:
+  training: {epochs: 4, patience: 2}
